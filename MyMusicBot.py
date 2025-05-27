@@ -39,62 +39,64 @@ async def on_ready():
 @bot.tree.command(name="play", description="Play a song or add it to the queue.")
 @app_commands.describe(song_query="Search query")
 async def play(interaction: discord.Interaction, song_query: str):
-    # Defer the interaction to acknowledge immediately
-    await interaction.response.defer()
-    
-    # Validate user is in a voice channel
-    user_vc = interaction.user.voice.channel if interaction.user.voice else None
-    if not user_vc:
-        await interaction.followup.send("❌ You must be connected to a voice channel to play music.")
-        return
-
-    voice_client = interaction.guild.voice_client
-
-    if voice_client is None:
-        voice_client = await user_vc.connect()
-    elif user_vc != voice_client.channel:
-        await voice_client.move_to(user_vc)
-
-    ydl_options = {
-        "format": "bestaudio[abr<=96]/bestaudio",
-        "noplaylist": True,
-        'cookiefile': 'cookies.txt',
-        "youtube_include_dash_manifest": False,
-        "youtube_include_hls_manifest": False,
-        "quiet": True,
-        "no_warnings": True,
-    }
-
-    query = "ytsearch1:" + song_query
     try:
+        await interaction.response.defer()
+
+        user_vc = interaction.user.voice.channel if interaction.user.voice else None
+        if not user_vc:
+            await interaction.followup.send("❌ You must be connected to a voice channel to play music.")
+            return
+
+        voice_client = interaction.guild.voice_client
+
+        if voice_client is None:
+            voice_client = await user_vc.connect()
+        elif user_vc != voice_client.channel:
+            await voice_client.move_to(user_vc)
+
+        ydl_options = {
+            "format": "bestaudio[abr<=96]/bestaudio",
+            "noplaylist": True,
+            'cookiefile': 'cookies.txt',
+            "youtube_include_dash_manifest": False,
+            "youtube_include_hls_manifest": False,
+            "quiet": True,
+            "no_warnings": True,
+        }
+
+        query = "ytsearch1:" + song_query
         results = await search_ytdlp_async(query, ydl_options)
+
+        tracks = results.get("entries", [])
+
+        if not tracks:
+            await interaction.followup.send("No results found.")
+            return
+
+        track = tracks[0]
+        audio_url = track["url"]
+        title = track["title"]
+        duration = str(datetime.timedelta(seconds=track["duration"]))
+
+        guild_id = str(interaction.guild_id)
+        if guild_id not in SONG_QUEUES:
+            SONG_QUEUES[guild_id] = deque()
+            LOOP_MODES[guild_id] = "none"
+
+        SONG_QUEUES[guild_id].append((audio_url, title, duration))
+
+        if voice_client.is_playing() or voice_client.is_paused():
+            await interaction.followup.send(f"Added to queue: **{title}** ({duration})")
+        else:
+            await interaction.followup.send(f"Now playing: **{title}** ({duration})")
+            await play_next_song(voice_client, guild_id, interaction.channel)
+
     except Exception as e:
-        await interaction.followup.send(f"Error while searching: {e}")
-        return
-
-    tracks = results.get("entries", [])
-
-    if not tracks:
-        await interaction.followup.send("No results found.")
-        return
-
-    track = tracks[0]
-    audio_url = track["url"]
-    title = track["title"]
-    duration = str(datetime.timedelta(seconds=track["duration"]))
-
-    guild_id = str(interaction.guild_id)
-    if guild_id not in SONG_QUEUES:
-        SONG_QUEUES[guild_id] = deque()
-        LOOP_MODES[guild_id] = "none"
-
-    SONG_QUEUES[guild_id].append((audio_url, title, duration))
-
-    if voice_client.is_playing() or voice_client.is_paused():
-        await interaction.followup.send(f"Added to queue: **{title}** ({duration})")
-    else:
-        await interaction.followup.send(f"Now playing: **{title}** ({duration})")
-        await play_next_song(voice_client, guild_id, interaction.channel)
+        print(f"Error in /play command: {e}")
+        try:
+            await interaction.followup.send(f"Error occurred: {e}")
+        except:
+            pass
 
 async def play_next_song(voice_client, guild_id, channel):
     if guild_id not in LOOP_MODES:
@@ -121,7 +123,8 @@ async def play_next_song(voice_client, guild_id, channel):
         "options": "-vn -c:a libopus -b:a 96k"
     }
 
-    source = discord.FFmpegOpusAudio(audio_url, **ffmpeg_options, executable="bin\\ffmpeg\\ffmpeg.exe")
+    # Use generic 'ffmpeg' executable for Linux compatibility (e.g., Render)
+    source = discord.FFmpegOpusAudio(audio_url, **ffmpeg_options, executable="ffmpeg")
 
     def after_play(error):
         if error:
