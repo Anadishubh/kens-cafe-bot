@@ -51,6 +51,7 @@ async def play(interaction: discord.Interaction, song_query: str):
     ydl_options = {
         "format": "bestaudio[abr<=96]/bestaudio",
         "noplaylist": True,
+        'cookiefile': 'cookies.txt',
         "youtube_include_dash_manifest": False,
         "youtube_include_hls_manifest": False,
     }
