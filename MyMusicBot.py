@@ -1,6 +1,6 @@
 import os
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord import app_commands
 from dotenv import load_dotenv
 import yt_dlp
@@ -39,8 +39,15 @@ async def on_ready():
 @bot.tree.command(name="play", description="Play a song or add it to the queue.")
 @app_commands.describe(song_query="Search query")
 async def play(interaction: discord.Interaction, song_query: str):
+    # Defer the interaction to acknowledge immediately
     await interaction.response.defer()
-    user_vc = interaction.user.voice.channel
+    
+    # Validate user is in a voice channel
+    user_vc = interaction.user.voice.channel if interaction.user.voice else None
+    if not user_vc:
+        await interaction.followup.send("❌ You must be connected to a voice channel to play music.")
+        return
+
     voice_client = interaction.guild.voice_client
 
     if voice_client is None:
@@ -54,10 +61,17 @@ async def play(interaction: discord.Interaction, song_query: str):
         'cookiefile': 'cookies.txt',
         "youtube_include_dash_manifest": False,
         "youtube_include_hls_manifest": False,
+        "quiet": True,
+        "no_warnings": True,
     }
 
     query = "ytsearch1:" + song_query
-    results = await search_ytdlp_async(query, ydl_options)
+    try:
+        results = await search_ytdlp_async(query, ydl_options)
+    except Exception as e:
+        await interaction.followup.send(f"Error while searching: {e}")
+        return
+
     tracks = results.get("entries", [])
 
     if not tracks:
@@ -107,8 +121,7 @@ async def play_next_song(voice_client, guild_id, channel):
         "options": "-vn -c:a libopus -b:a 96k"
     }
 
-    # Use system ffmpeg, no executable path
-    source = discord.FFmpegOpusAudio(audio_url, **ffmpeg_options)
+    source = discord.FFmpegOpusAudio(audio_url, **ffmpeg_options, executable="bin\\ffmpeg\\ffmpeg.exe")
 
     def after_play(error):
         if error:
