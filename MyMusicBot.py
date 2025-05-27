@@ -7,9 +7,12 @@ import yt_dlp
 from collections import deque
 import asyncio
 import datetime
+from keep_alive import keep_alive
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
+
+keep_alive()
 
 SONG_QUEUES = {}
 LOOP_MODES = {}  # none, one, all
